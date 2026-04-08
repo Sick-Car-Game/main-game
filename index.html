@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Physics Hill Climb</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">画面を長押しで加速！</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script>
+        const { Engine, Render, Runner, Bodies, Composite, Constraint, Mouse, Events, Vector } = Matter;
+
+        // --- 設定 ---
+        const engine = Engine.create();
+        const world = engine.world;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        const render = Render.create({
+            element: document.body,
+            engine: engine,
+            options: {
+                width: width,
+                height: height,
+                wireframes: false, // 色を付けるためにfalse
+                background: '#87CEEB'
+            }
+        });
+
+        Render.run(render);
+        const runner = Runner.create();
+        Runner.run(runner, engine);
+
+        // --- 地面 (長く作成) ---
+        const ground = Bodies.rectangle(5000, height - 20, 10000, 60, { 
+            isStatic: true, 
+            render: { fillStyle: '#2e7d32' } 
+        });
+        Composite.add(world, ground);
+
+        // --- プレイヤー（車）の作成 ---
+        const startX = 150;
+        const startY = height - 100;
+
+        // 車体
+        const carBody = Bodies.rectangle(startX, startY, 120, 40, { 
+            collisionFilter: { group: -1 }, // タイヤと衝突しないように
+            render: { fillStyle: '#d32f2f' }
+        });
+
+        // タイヤ
+        const wheelA = Bodies.circle(startX - 40, startY + 30, 25, { 
+            friction: 0.8,
+            collisionFilter: { group: -1 },
+            render: { fillStyle: '#333' }
+        });
+
+        const wheelB = Bodies.circle(startX + 40, startY + 30, 25, { 
+            friction: 0.8,
+            collisionFilter: { group: -1 },
+            render: { fillStyle: '#333' }
+        });
+
+        // サスペンション（車体とタイヤを繋ぐ）
+        const axelA = Constraint.create({
+            bodyA: carBody,
+            pointA: { x: -40, y: 20 },
+            bodyB: wheelA,
+            stiffness: 0.2,
+            length: 10,
+            render: { visible: false }
+        });
+
+        const axelB = Constraint.create({
+            bodyA: carBody,
+            pointA: { x: 40, y: 20 },
+            bodyB: wheelB,
+            stiffness: 0.2,
+            length: 10,
+            render: { visible: false }
+        });
+
+        Composite.add(world, [carBody, wheelA, wheelB, axelA, axelB]);
+
+        // --- 障害物（ピラミッド） ---
+        for (let i = 0; i < 10; i++) {
+            for (let j = 0; j < (10 - i); j++) {
+                const box = Bodies.rectangle(800 + (j * 40) + (i * 20), height - 60 - (i * 45), 35, 40, {
+                    density: 0.0005, // 軽くして吹き飛びやすくする
+                    render: { fillStyle: '#ff9800', strokeStyle: '#e65100', lineWidth: 2 }
+                });
+                Composite.add(world, box);
+            }
+        }
+
+        // --- 操作ロジック ---
+        let isMoving = false;
+
+        const startMove = () => isMoving = true;
+        const stopMove = () => isMoving = false;
+
+        window.addEventListener('mousedown', startMove);
+        window.addEventListener('mouseup', stopMove);
+        window.addEventListener('touchstart', startMove);
+        window.addEventListener('touchend', stopMove);
+
+        // --- 更新イベント ---
+        Events.on(engine, 'beforeUpdate', function() {
+            if (isMoving) {
+                // タイヤに回転力を与える（右方向）
+                const torque = 0.15;
+                wheelA.torque = torque;
+                wheelB.torque = torque;
+            }
+
+            // --- カメラ追従 ---
+            // 車体の位置に合わせて描画領域をずらす
+            const translateOffset = -carBody.position.x + width * 0.3;
+            Render.lookAt(render, {
+                min: { x: carBody.position.x - width * 0.3, y: 0 },
+                max: { x: carBody.position.x + width * 0.7, y: height }
+            });
+        });
+
+        // 画面サイズ変更対応
+        window.addEventListener('resize', () => {
+            render.canvas.width = window.innerWidth;
+            render.canvas.height = window.innerHeight;
+        });
+
+    </script>
+</body>
+</html>
+
