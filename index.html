@@ -3,27 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Physics Hill Climb</title>
+    <title>Cyber Physics Racer</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Courier New', Courier, monospace; }
         canvas { display: block; }
-        #ui {
+        .controls {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            pointer-events: none;
-            text-shadow: 1px 1px 2px black;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            padding: 0 20px;
+            box-sizing: border-box;
+            gap: 10px;
+        }
+        .btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #0ff;
+            border-radius: 50%;
+            color: #0ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            user-select: none;
+            touch-action: none;
+            box-shadow: 0 0 15px #0ff;
+        }
+        .btn:active { background: rgba(0, 255, 255, 0.3); }
+        #fire-btn {
+            position: absolute;
+            bottom: 120px;
+            right: 30px;
+            width: 70px;
+            height: 70px;
+            background: rgba(255, 0, 0, 0.2);
+            border: 2px solid #f0f;
+            color: #f0f;
+            box-shadow: 0 0 15px #f0f;
         }
     </style>
 </head>
 <body>
-    <div id="ui">画面を長押しで加速！</div>
+
+    <div class="controls">
+        <div id="back-btn" class="btn">BACK</div>
+        <div id="drive-btn" class="btn">DRIVE</div>
+    </div>
+    <div id="fire-btn" class="btn">FIRE</div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <script>
-        const { Engine, Render, Runner, Bodies, Composite, Constraint, Mouse, Events, Vector } = Matter;
+        const { Engine, Render, Runner, Bodies, Composite, Constraint, Events, Vector, Body } = Matter;
 
-        // --- 設定 ---
         const engine = Engine.create();
         const world = engine.world;
         const width = window.innerWidth;
@@ -33,10 +67,9 @@
             element: document.body,
             engine: engine,
             options: {
-                width: width,
-                height: height,
-                wireframes: false, // 色を付けるためにfalse
-                background: '#87CEEB'
+                width: width, height: height,
+                wireframes: false,
+                background: 'transparent' // 背景は自前で描画
             }
         });
 
@@ -44,104 +77,130 @@
         const runner = Runner.create();
         Runner.run(runner, engine);
 
-        // --- 地面 (長く作成) ---
-        const ground = Bodies.rectangle(5000, height - 20, 10000, 60, { 
-            isStatic: true, 
-            render: { fillStyle: '#2e7d32' } 
-        });
-        Composite.add(world, ground);
+        // --- 起伏のある地形の作成 ---
+        const groundParts = [];
+        for (let i = 0; i < 30; i++) {
+            const x = i * 400;
+            const y = height - 30 + Math.sin(i * 0.5) * 60; // サイン波で丘を作る
+            const ground = Bodies.rectangle(x, y, 410, 100, { 
+                isStatic: true, 
+                angle: Math.cos(i * 0.5) * 0.2,
+                render: { fillStyle: '#1a1a2e' }
+            });
+            groundParts.push(ground);
+        }
+        Composite.add(world, groundParts);
 
-        // --- プレイヤー（車）の作成 ---
-        const startX = 150;
-        const startY = height - 100;
-
-        // 車体
-        const carBody = Bodies.rectangle(startX, startY, 120, 40, { 
-            collisionFilter: { group: -1 }, // タイヤと衝突しないように
-            render: { fillStyle: '#d32f2f' }
-        });
-
-        // タイヤ
-        const wheelA = Bodies.circle(startX - 40, startY + 30, 25, { 
-            friction: 0.8,
+        // --- プレイヤー（車） ---
+        const carBody = Bodies.rectangle(200, height - 150, 130, 30, { 
             collisionFilter: { group: -1 },
-            render: { fillStyle: '#333' }
+            chamfer: { radius: 10 },
+            render: { fillStyle: '#0ff' } 
+        });
+        
+        // 車に「顔」をつける（リアルな見た目用）
+        carBody.render.sprite = null; 
+
+        const wheelA = Bodies.circle(160, height - 120, 25, { 
+            friction: 0.9, collisionFilter: { group: -1 },
+            render: { fillStyle: '#333', strokeStyle: '#0ff', lineWidth: 3 }
+        });
+        const wheelB = Bodies.circle(240, height - 120, 25, { 
+            friction: 0.9, collisionFilter: { group: -1 },
+            render: { fillStyle: '#333', strokeStyle: '#0ff', lineWidth: 3 }
         });
 
-        const wheelB = Bodies.circle(startX + 40, startY + 30, 25, { 
-            friction: 0.8,
-            collisionFilter: { group: -1 },
-            render: { fillStyle: '#333' }
-        });
-
-        // サスペンション（車体とタイヤを繋ぐ）
-        const axelA = Constraint.create({
-            bodyA: carBody,
-            pointA: { x: -40, y: 20 },
-            bodyB: wheelA,
-            stiffness: 0.2,
-            length: 10,
-            render: { visible: false }
-        });
-
-        const axelB = Constraint.create({
-            bodyA: carBody,
-            pointA: { x: 40, y: 20 },
-            bodyB: wheelB,
-            stiffness: 0.2,
-            length: 10,
-            render: { visible: false }
-        });
-
+        const axelA = Constraint.create({ bodyA: carBody, pointA: { x: -40, y: 15 }, bodyB: wheelA, stiffness: 0.1, length: 15, render: { visible: false } });
+        const axelB = Constraint.create({ bodyA: carBody, pointA: { x: 40, y: 15 }, bodyB: wheelB, stiffness: 0.1, length: 15, render: { visible: false } });
         Composite.add(world, [carBody, wheelA, wheelB, axelA, axelB]);
 
-        // --- 障害物（ピラミッド） ---
-        for (let i = 0; i < 10; i++) {
-            for (let j = 0; j < (10 - i); j++) {
-                const box = Bodies.rectangle(800 + (j * 40) + (i * 20), height - 60 - (i * 45), 35, 40, {
-                    density: 0.0005, // 軽くして吹き飛びやすくする
-                    render: { fillStyle: '#ff9800', strokeStyle: '#e65100', lineWidth: 2 }
-                });
-                Composite.add(world, box);
-            }
+        // --- 障害物（オレンジの箱） ---
+        for (let i = 0; i < 15; i++) {
+            const box = Bodies.rectangle(1200 + i * 50, height - 100, 40, 40, {
+                density: 0.0005,
+                render: { fillStyle: '#f90', strokeStyle: '#fff', lineWidth: 1 }
+            });
+            Composite.add(world, box);
         }
 
-        // --- 操作ロジック ---
-        let isMoving = false;
+        // --- 操作系 ---
+        let driveMode = 0; // 1:前進, -1:後退, 0:停止
+        document.getElementById('drive-btn').ontouchstart = () => driveMode = 1;
+        document.getElementById('drive-btn').ontouchend = () => driveMode = 0;
+        document.getElementById('back-btn').ontouchstart = () => driveMode = -1;
+        document.getElementById('back-btn').ontouchend = () => driveMode = 0;
 
-        const startMove = () => isMoving = true;
-        const stopMove = () => isMoving = false;
+        // --- ミサイル発射 ---
+        document.getElementById('fire-btn').ontouchstart = () => {
+            const missile = Bodies.circle(carBody.position.x + 80, carBody.position.y, 10, {
+                density: 0.1,
+                render: { fillStyle: '#f0f' }
+            });
+            Body.setVelocity(missile, { x: 25, y: -2 });
+            Composite.add(world, missile);
 
-        window.addEventListener('mousedown', startMove);
-        window.addEventListener('mouseup', stopMove);
-        window.addEventListener('touchstart', startMove);
-        window.addEventListener('touchend', stopMove);
+            // 一定時間後に爆発チェック（簡易版：何かに当たったら周囲に力を与える）
+            Events.on(engine, 'collisionStart', (event) => {
+                event.pairs.forEach(pair => {
+                    if (pair.bodyA === missile || pair.bodyB === missile) {
+                        explode(missile.position);
+                        Composite.remove(world, missile);
+                    }
+                });
+            });
+        };
 
-        // --- 更新イベント ---
-        Events.on(engine, 'beforeUpdate', function() {
-            if (isMoving) {
-                // タイヤに回転力を与える（右方向）
-                const torque = 0.15;
-                wheelA.torque = torque;
-                wheelB.torque = torque;
+        function explode(pos) {
+            const bodies = Composite.allBodies(world);
+            bodies.forEach(body => {
+                if (!body.isStatic) {
+                    const force = Vector.sub(body.position, pos);
+                    const distance = Vector.magnitude(force);
+                    if (distance < 250) {
+                        const strength = (250 - distance) * 0.002;
+                        Body.applyForce(body, pos, Vector.mult(Vector.normalise(force), strength));
+                    }
+                }
+            });
+        }
+
+        // --- 描画ループカスタム（背景と車の装飾） ---
+        Events.on(render, 'beforeRender', (event) => {
+            const ctx = event.source.context;
+            const scrollX = -carBody.position.x + width * 0.3;
+
+            // 背景：サイバーパンクな夜景
+            const grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, '#000011');
+            grad.addColorStop(1, '#330033');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            // 遠景のビル群（視差効果っぽく）
+            ctx.fillStyle = '#050510';
+            for(let i=0; i<20; i++) {
+                const bX = (i * 200 + scrollX * 0.2) % 2000;
+                ctx.fillRect(bX, height - 300, 100, 300);
             }
+        });
 
-            // --- カメラ追従 ---
-            // 車体の位置に合わせて描画領域をずらす
-            const translateOffset = -carBody.position.x + width * 0.3;
+        // カメラ追従
+        Events.on(engine, 'beforeUpdate', () => {
+            if (driveMode !== 0) {
+                const speed = 0.2 * driveMode;
+                wheelA.torque = speed;
+                wheelB.torque = speed;
+            }
             Render.lookAt(render, {
                 min: { x: carBody.position.x - width * 0.3, y: 0 },
                 max: { x: carBody.position.x + width * 0.7, y: height }
             });
         });
 
-        // 画面サイズ変更対応
         window.addEventListener('resize', () => {
             render.canvas.width = window.innerWidth;
             render.canvas.height = window.innerHeight;
         });
-
     </script>
 </body>
 </html>
-
